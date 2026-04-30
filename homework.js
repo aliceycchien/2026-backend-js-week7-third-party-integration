@@ -24,7 +24,7 @@ const ADMIN_TOKEN = process.env.API_KEY;
  */
 function formatOrderDate(timestamp) {
   // 請實作此函式
-  // 提示：dayjs.unix(timestamp).format('YYYY/MM/DD HH:mm')
+  return dayjs.unix(timestamp).format('YYYY/MM/DD HH:mm');
 }
 
 /**
@@ -34,10 +34,10 @@ function formatOrderDate(timestamp) {
  */
 function getDaysAgo(timestamp) {
   // 請實作此函式
-  // 提示：
-  // 1. 用 dayjs() 取得今天
-  // 2. 用 dayjs.unix(timestamp) 取得訂單日期
-  // 3. 用 .diff() 計算天數差異
+  const now = dayjs();
+  const orderDate = dayjs.unix(timestamp);
+  const diffDays = now.diff(orderDate, 'day');
+  return diffDays === 0 ? '今天' : `${diffDays} 天前`;
 }
 
 /**
@@ -47,6 +47,9 @@ function getDaysAgo(timestamp) {
  */
 function isOrderOverdue(timestamp) {
   // 請實作此函式
+  const now = dayjs();
+  const orderDate = dayjs.unix(timestamp);
+  return now.diff(orderDate, 'day') > 7;
 }
 
 /**
@@ -56,10 +59,14 @@ function isOrderOverdue(timestamp) {
  */
 function getThisWeekOrders(orders) {
   // 請實作此函式
-  // 提示：
-  // 1. 用 dayjs().startOf('week') 取得本週開始
-  // 2. 用 dayjs().endOf('week') 取得本週結束
-  // 3. 用 .isBefore() 和 .isAfter() 判斷
+  const startOfWeek = dayjs().startOf('week');
+  const endOfWeek = dayjs().endOf('week');
+  
+  return orders.filter(order => {
+    const orderDate = dayjs.unix(order.createdAt);
+    return orderDate.valueOf() >= startOfWeek.valueOf() && 
+           orderDate.valueOf() <= endOfWeek.valueOf();
+  });
 }
 
 // ========================================
@@ -80,6 +87,24 @@ function getThisWeekOrders(orders) {
  */
 function validateOrderUser(data) {
   // 請實作此函式
+  const errors = [];
+  const { name, tel, email, address, payment } = data;
+
+  if (!name) errors.push('姓名不可為空');
+  if (!/^09\d{8}$/.test(tel)) errors.push('電話必須是 09 開頭的 10 位數字');
+  if (!email.includes('@')) errors.push('Email 格式不正確');
+  if (!address) errors.push('地址不可為空');
+  
+  const validPayments = ['ATM', 'Credit Card', 'Apple Pay'];
+  if (!validPayments.includes(payment)) errors.push('付款方式不正確');
+
+  const emailRule = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRule.test(email)) errors.push('Email 格式不正確');
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 }
 
 /**
@@ -94,6 +119,10 @@ function validateOrderUser(data) {
  */
 function validateCartQuantity(quantity) {
   // 請實作此函式
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    return { isValid: false, error: '數量必須是 1-99 之間的整數' };
+  }
+  return { isValid: true };
 }
 
 // ========================================
@@ -106,7 +135,8 @@ function validateCartQuantity(quantity) {
  */
 function generateOrderId() {
   // 請實作此函式
-  // 提示：可以用 Date.now().toString(36) + Math.random().toString(36).slice(2)
+  const randomStr = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  return `ORD-${randomStr}`;
 }
 
 /**
@@ -115,6 +145,8 @@ function generateOrderId() {
  */
 function generateCartItemId() {
   // 請實作此函式
+  const randomStr = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  return `CART-${randomStr}`;
 }
 
 // ========================================
@@ -127,8 +159,9 @@ function generateCartItemId() {
  */
 async function getProductsWithAxios() {
   // 請實作此函式
-  // 提示：axios.get() 會自動解析 JSON，不需要 .json()
-  // 回傳 response.data.products
+  const url = `${BASE_URL}/api/livejs/v1/customer/${API_PATH}/products`;
+  const response = await axios.get(url);
+  return response.data.products;
 }
 
 /**
@@ -139,7 +172,11 @@ async function getProductsWithAxios() {
  */
 async function addToCartWithAxios(productId, quantity) {
   // 請實作此函式
-  // 提示：axios.post(url, data) 會自動設定 Content-Type
+  const url = `${BASE_URL}/api/livejs/v1/customer/${API_PATH}/carts`;
+  const response = await axios.post(url, {
+    data: { productId, quantity }
+  });
+  return response.data;
 }
 
 /**
@@ -148,17 +185,25 @@ async function addToCartWithAxios(productId, quantity) {
  */
 async function getOrdersWithAxios() {
   // 請實作此函式
-  // 提示：axios.get(url, { headers: { authorization: token } })
+  try {
+    const url = `${BASE_URL}/api/livejs/v1/admin/${API_PATH}/orders`;
+    const response = await axios.get(url, {
+      headers: { Authorization: ADMIN_TOKEN }
+    });
+    return response.data.orders;
+  } catch (error) {
+    return []; 
+  }
 }
 
 /*
 比較題：請說明 fetch 和 axios 的主要差異
 
-1. ____________________________________
+1. 錯誤處理：Axios 會自動根據 HTTP 狀態碼（如 4xx, 5xx）拋出錯誤進 catch；fetch 則僅在網路斷線時報錯，需手動檢查 response.ok。
 
-2. ____________________________________
+2. JSON 轉換：Axios 會自動將回傳的 JSON 轉為物件；fetch 需要手動調用 .json() 非同步方法。
 
-3. ____________________________________
+3. 功能豐富度：Axios 內建請求/回應攔截器 (Interceptors)、超時設定 (Timeout) 以及 CSRF 保護等功能，fetch 則較為陽春。
 */
 
 // ========================================
@@ -179,6 +224,15 @@ const OrderService = {
    */
   async fetchOrders() {
     // 請實作此函式
+    try {
+      const url = `${this.baseURL}/api/livejs/v1/admin/${this.apiPath}/orders`;
+      const response = await axios.get(url, {
+        headers: { Authorization: this.token }
+      });
+      return response.data.orders;
+    } catch (error) {
+      return [];
+    }
   },
 
   /**
@@ -188,6 +242,12 @@ const OrderService = {
    */
   formatOrders(orders) {
     // 請實作此函式
+    if (!Array.isArray(orders)) return [];
+  
+    return orders.map(order => ({
+      ...order,
+      formattedDate: formatOrderDate(order.createdAt)
+    }));
   },
 
   /**
@@ -197,6 +257,7 @@ const OrderService = {
    */
   filterUnpaidOrders(orders) {
     // 請實作此函式
+    return orders.filter(order => !order.paid);
   },
 
   /**
